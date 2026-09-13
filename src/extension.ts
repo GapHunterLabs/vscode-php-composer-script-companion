@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { parseScripts, scanUsage } from './composerScripts';
+import { recordHit } from './reviewPrompt';
 
 let diagnostics: vscode.DiagnosticCollection;
 
@@ -55,7 +56,7 @@ function lineOfScriptKey(text: string, scriptName: string): number {
   return index === -1 ? 0 : index;
 }
 
-async function refresh(document: vscode.TextDocument): Promise<void> {
+async function refresh(context: vscode.ExtensionContext, document: vscode.TextDocument): Promise<void> {
   if (basename(document.uri) !== 'composer.json') {
     diagnostics.delete(document.uri);
     return;
@@ -92,6 +93,10 @@ async function refresh(document: vscode.TextDocument): Promise<void> {
         vscode.DiagnosticSeverity.Information,
       );
       diagnostic.source = 'PHP Composer Script Companion';
+      // A real orphaned script actually flagged -- dedup'd by file URI +
+      // line so re-scanning on every keystroke doesn't inflate the
+      // count towards the review prompt.
+      recordHit(context, `${document.uri.toString()}:${line}`);
       return diagnostic;
     });
   diagnostics.set(document.uri, result);
@@ -101,11 +106,11 @@ export function activate(context: vscode.ExtensionContext): void {
   diagnostics = vscode.languages.createDiagnosticCollection('phpComposerScriptCompanion');
   context.subscriptions.push(diagnostics);
 
-  vscode.workspace.textDocuments.forEach((doc) => void refresh(doc));
+  vscode.workspace.textDocuments.forEach((doc) => void refresh(context, doc));
 
   context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument((doc) => void refresh(doc)),
-    vscode.workspace.onDidChangeTextDocument((event) => void refresh(event.document)),
+    vscode.workspace.onDidOpenTextDocument((doc) => void refresh(context, doc)),
+    vscode.workspace.onDidChangeTextDocument((event) => void refresh(context, event.document)),
     vscode.workspace.onDidCloseTextDocument((document) => diagnostics.delete(document.uri)),
   );
 }
